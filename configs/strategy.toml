@@ -1,0 +1,92 @@
+[portfolio]
+capital_jpy = 200000
+cash_floor_jpy = 0
+benchmark_symbol = "1329"
+rebalance = "M"
+risk_check = "2W"
+max_drawdown_target = 0.15
+risk_reduce_drawdown = 0.06
+full_defense_drawdown = 0.10
+min_trade_jpy = 5000
+rebalance_threshold = 0.05
+max_positions = 3
+transaction_cost_bps = 8.0
+
+[signals]
+momentum_fast_days = 126
+momentum_slow_days = 252
+skip_days = 21
+volatility_days = 63
+trend_days = 200
+
+[[assets]]
+symbol = "1329"
+data_symbol = "1329.T"
+jquants_code = "13290"
+name = "iShares Core Nikkei 225 ETF"
+asset_class = "japan_equity"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 5.0
+enabled = true
+
+[[assets]]
+symbol = "1655"
+data_symbol = "1655.T"
+jquants_code = "16550"
+name = "iShares S&P 500 JPY ETF"
+asset_class = "global_equity_fx"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 8.0
+enabled = true
+
+[[assets]]
+symbol = "2559"
+data_symbol = "2559.T"
+jquants_code = "25590"
+name = "MAXIS All Country Equity ETF"
+asset_class = "global_equity_fx"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 8.0
+enabled = true
+
+[[assets]]
+symbol = "1540"
+data_symbol = "1540.T"
+jquants_code = "15400"
+name = "Pure Gold ETF"
+asset_class = "gold"
+role = "risk"
+max_weight = 0.25
+min_trade_unit = 1
+slippage_bps = 10.0
+enabled = true
+
+[[assets]]
+symbol = "2510"
+data_symbol = "2510.T"
+jquants_code = "25100"
+name = "Domestic Bond ETF"
+asset_class = "japan_bond"
+role = "defensive"
+max_weight = 0.85
+min_trade_unit = 1
+slippage_bps = 5.0
+enabled = true
+
+[[assets]]
+symbol = "CASH"
+data_symbol = "CASH"
+jquants_code = ""
+name = "JPY Cash"
+asset_class = "cash"
+role = "cash"
+max_weight = 1.0
+min_trade_unit = 1
+slippage_bps = 0.0
+enabled = true

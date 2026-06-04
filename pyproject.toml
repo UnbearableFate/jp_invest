@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rakuten-quant"
+version = "0.1.0"
+description = "Low-frequency long-only quant strategy toolkit for a small Rakuten Securities Japan account."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "torch>=2.2",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+hf = [
+  "accelerate>=1.0",
+  "datasets>=3.0",
+  "peft>=0.13",
+  "transformers>=4.45",
+]
+
+[project.scripts]
+rakuten-quant = "rakuten_quant.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

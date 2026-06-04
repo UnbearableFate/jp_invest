@@ -1,0 +1,2 @@
+[console_scripts]
+rakuten-quant = rakuten_quant.cli:main

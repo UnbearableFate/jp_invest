@@ -1,0 +1,272 @@
+[portfolio]
+capital_jpy = 200000
+cash_floor_jpy = 0
+benchmark_symbol = "1329"
+rebalance = "M"
+risk_check = "2W"
+max_drawdown_target = 0.30
+risk_reduce_drawdown = 1.0
+full_defense_drawdown = 1.0
+min_trade_jpy = 5000
+rebalance_threshold = 0.05
+max_positions = 4
+transaction_cost_bps = 12.0
+
+[signals]
+momentum_fast_days = 126
+momentum_slow_days = 252
+skip_days = 21
+volatility_days = 63
+trend_days = 200
+
+[[assets]]
+symbol = "1329"
+data_symbol = "1329.T"
+jquants_code = "13290"
+name = "iShares Core Nikkei 225 ETF"
+asset_class = "japan_equity"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 5.0
+enabled = true
+
+[[assets]]
+symbol = "1579"
+data_symbol = "1579.T"
+jquants_code = "15790"
+name = "Nikkei 225 Bull 2x ETF"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 20.0
+enabled = true
+
+[[assets]]
+symbol = "1580"
+data_symbol = "1580.T"
+jquants_code = "15800"
+name = "Nikkei 225 Bear -1x ETF"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 20.0
+enabled = true
+
+[[assets]]
+symbol = "1655"
+data_symbol = "1655.T"
+jquants_code = "16550"
+name = "iShares S&P 500 JPY ETF"
+asset_class = "us_equity"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 8.0
+enabled = true
+
+[[assets]]
+symbol = "2558"
+data_symbol = "2558.T"
+jquants_code = "25580"
+name = "MAXIS S&P 500 ETF"
+asset_class = "us_equity"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 8.0
+enabled = true
+
+[[assets]]
+symbol = "1545"
+data_symbol = "1545.T"
+jquants_code = "15450"
+name = "NEXT FUNDS NASDAQ-100 ETF"
+asset_class = "us_equity"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 10.0
+enabled = true
+
+[[assets]]
+symbol = "2631"
+data_symbol = "2631.T"
+jquants_code = "26310"
+name = "MAXIS NASDAQ-100 ETF"
+asset_class = "us_equity"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 10.0
+enabled = true
+
+[[assets]]
+symbol = "2559"
+data_symbol = "2559.T"
+jquants_code = "25590"
+name = "MAXIS All Country Equity ETF"
+asset_class = "global_equity_fx"
+role = "risk"
+max_weight = 0.70
+min_trade_unit = 1
+slippage_bps = 8.0
+enabled = true
+
+[[assets]]
+symbol = "1540"
+data_symbol = "1540.T"
+jquants_code = "15400"
+name = "Pure Gold ETF"
+asset_class = "precious_metals"
+role = "risk"
+max_weight = 0.25
+min_trade_unit = 1
+slippage_bps = 10.0
+enabled = true
+
+[[assets]]
+symbol = "1541"
+data_symbol = "1541.T"
+jquants_code = "15410"
+name = "Pure Platinum ETF"
+asset_class = "precious_metals"
+role = "risk"
+max_weight = 0.10
+min_trade_unit = 1
+slippage_bps = 12.0
+enabled = true
+
+[[assets]]
+symbol = "1542"
+data_symbol = "1542.T"
+jquants_code = "15420"
+name = "Pure Silver ETF"
+asset_class = "precious_metals"
+role = "risk"
+max_weight = 0.10
+min_trade_unit = 1
+slippage_bps = 12.0
+enabled = true
+
+[[assets]]
+symbol = "1543"
+data_symbol = "1543.T"
+jquants_code = "15430"
+name = "Pure Palladium ETF"
+asset_class = "precious_metals"
+role = "risk"
+max_weight = 0.10
+min_trade_unit = 1
+slippage_bps = 15.0
+enabled = true
+
+[[assets]]
+symbol = "1676"
+data_symbol = "1676.T"
+jquants_code = "16760"
+name = "WisdomTree Precious Metals Basket ETF"
+asset_class = "precious_metals"
+role = "risk"
+max_weight = 0.10
+min_trade_unit = 1
+slippage_bps = 15.0
+enabled = true
+
+[[assets]]
+symbol = "2036"
+data_symbol = "2036.T"
+jquants_code = "20360"
+name = "NEXT NOTES Gold Bull ETN"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 25.0
+enabled = true
+
+[[assets]]
+symbol = "2037"
+data_symbol = "2037.T"
+jquants_code = "20370"
+name = "NEXT NOTES Gold Bear ETN"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 25.0
+enabled = true
+
+[[assets]]
+symbol = "2038"
+data_symbol = "2038.T"
+jquants_code = "20380"
+name = "NEXT NOTES Crude Oil Bull ETN"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 30.0
+enabled = true
+
+[[assets]]
+symbol = "2039"
+data_symbol = "2039.T"
+jquants_code = "20390"
+name = "NEXT NOTES Crude Oil Bear ETN"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 30.0
+enabled = true
+
+[[assets]]
+symbol = "2040"
+data_symbol = "2040.T"
+jquants_code = "20400"
+name = "NEXT NOTES NY Dow Bull ETN"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 25.0
+enabled = true
+
+[[assets]]
+symbol = "2041"
+data_symbol = "2041.T"
+jquants_code = "20410"
+name = "NEXT NOTES NY Dow Bear ETN"
+asset_class = "leveraged_inverse"
+role = "risk"
+max_weight = 0.05
+min_trade_unit = 1
+slippage_bps = 25.0
+enabled = true
+
+[[assets]]
+symbol = "2510"
+data_symbol = "2510.T"
+jquants_code = "25100"
+name = "Domestic Bond ETF"
+asset_class = "japan_bond"
+role = "defensive"
+max_weight = 0.85
+min_trade_unit = 1
+slippage_bps = 5.0
+enabled = true
+
+[[assets]]
+symbol = "CASH"
+data_symbol = "CASH"
+jquants_code = ""
+name = "JPY Cash"
+asset_class = "cash"
+role = "cash"
+max_weight = 1.0
+min_trade_unit = 1
+slippage_bps = 0.0
+enabled = true

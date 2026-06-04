@@ -1,0 +1,110 @@
+Metadata-Version: 2.4
+Name: rakuten-quant
+Version: 0.1.0
+Summary: Low-frequency long-only quant strategy toolkit for a small Rakuten Securities Japan account.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.26
+Requires-Dist: pandas>=2.2
+
+# Rakuten Quant
+
+乐天证券用的低频量化交易原型：用J-Quants真实日线数据，生成“今天应该买/卖什么”的手工下单清单。策略是长仓、无杠杆、无金融衍生品，默认本金约20万日元。
+
+这不是投资建议，也不保证收益。下单前必须自己在乐天证券确认价格、可买数量、NISA/特定口座设置和交易成本。
+
+## 一次设置
+
+只需要设置一次J-Quants API key。不要把key写进文件。
+
+```bash
+cd "/Users/unbearablefate/Documents/New project"
+export JQUANTS_API_KEY="你的J-Quants API key"
+```
+
+如果你用的是Codex当前环境，不需要安装依赖；脚本会自动使用可用的bundled Python。
+
+## 一步生成推荐下单清单
+
+```bash
+./scripts/recommend.sh
+```
+
+这个命令会自动完成：
+
+1. 从J-Quants下载最新可用日线到`data/jquants_prices.csv`
+2. 运行回测并写入`reports/jquants/backtest_report.md`
+3. 生成最新信号到`reports/jquants/latest_signals.csv`
+4. 生成推荐下单清单到`reports/jquants/orders.csv`
+5. 在终端打印需要执行的`BUY`/`SELL`
+
+## 如果你已有持仓
+
+在项目根目录创建`positions.csv`：
+
+```csv
+symbol,units
+1475,137
+1540,2
+2559,2
+```
+
+然后还是执行同一个命令：
+
+```bash
+./scripts/recommend.sh
+```
+
+脚本会自动读取`positions.csv`，只输出需要调仓的差额订单。
+
+## 常用命令
+
+复用已有行情，不重新请求J-Quants：
+
+```bash
+./scripts/recommend.sh --use-existing-prices
+```
+
+指定数据区间：
+
+```bash
+./scripts/recommend.sh --start 2021-05-29 --end 2026-05-29
+```
+
+指定持仓文件：
+
+```bash
+./scripts/recommend.sh --positions my_positions.csv
+```
+
+## 输出怎么看
+
+最重要的文件是：
+
+- `reports/jquants/orders.csv`：手工下单清单
+- `reports/jquants/latest_signals.csv`：各资产动量、波动率、是否入选、目标权重
+- `reports/jquants/backtest_report.md`：历史回测表现和最大回撤
+
+`orders.csv`里的关键列：
+
+- `action`: `BUY`买入，`SELL`卖出，`HOLD`不动
+- `trade_units`: 推荐交易数量
+- `trade_value_jpy`: 估算交易金额
+- `target_weight`: 策略目标权重
+
+## 当前默认策略
+
+- 标的：`1475`、`1655`、`2559`、`1540`、`2510`、现金
+- 月度调仓，双周风险检查
+- 风险资产需高于200日均线，且12-1个月动量为正
+- 选2-3个评分最高资产，按反波动率分配
+- 回撤超过6%时风险资产减半，超过10%时进入防守仓
+- 保留至少15000日元现金，小额差额低于5000日元不交易
+
+## 项目结构
+
+- `configs/strategy.toml`：策略参数和标的配置
+- `src/rakuten_quant/`：数据下载、信号、回测、订单生成代码
+- `scripts/recommend.sh`：一键生成推荐订单
+- `data/`：本地行情数据，已加入`.gitignore`
+- `reports/`：本地报告和订单输出，已加入`.gitignore`
