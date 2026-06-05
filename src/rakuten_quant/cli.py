@@ -4,6 +4,8 @@ import argparse
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
+
 from .basic_strategies import compare_basic_strategies
 from .backtest import run_backtest, write_backtest_outputs
 from .config import load_config
@@ -90,11 +92,23 @@ def main(argv: list[str] | None = None) -> int:
     ml_train.add_argument("--epochs", type=int, default=80)
     ml_train.add_argument("--batch-size", type=int, default=64)
     ml_train.add_argument("--learning-rate", type=float, default=1e-3)
+    ml_train.add_argument("--weight-decay", type=float, default=1e-4)
     ml_train.add_argument("--model-dim", type=int, default=64)
     ml_train.add_argument("--num-heads", type=int, default=4)
     ml_train.add_argument("--num-layers", type=int, default=2)
     ml_train.add_argument("--dropout", type=float, default=0.1)
+    ml_train.add_argument("--validation-ratio", type=float, default=0.2)
+    ml_train.add_argument("--seed", type=int, default=7)
+    ml_train.add_argument("--max-steps", type=int)
     ml_train.add_argument("--device")
+
+    ml_predict = subparsers.add_parser("ml-predict", help="Write Transformer score predictions for one rebalance date.")
+    ml_predict.add_argument("--config", required=True)
+    ml_predict.add_argument("--prices", required=True)
+    ml_predict.add_argument("--model", required=True)
+    ml_predict.add_argument("--out", required=True)
+    ml_predict.add_argument("--asof", help="Prediction date. Defaults to the latest available price date.")
+    ml_predict.add_argument("--device")
 
     ml_walk = subparsers.add_parser("ml-walk-forward", help="Run Transformer walk-forward validation.")
     ml_walk.add_argument("--config", required=True)
@@ -264,15 +278,37 @@ def main(argv: list[str] | None = None) -> int:
             epochs=args.epochs,
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
             model_dim=args.model_dim,
             num_heads=args.num_heads,
             num_layers=args.num_layers,
             dropout=args.dropout,
+            validation_ratio=args.validation_ratio,
             device=args.device,
+            seed=args.seed,
+            max_steps=args.max_steps,
         )
-        print(f"Wrote Transformer model to {Path(args.out).resolve()}")
-        print(f"Samples: {summary['samples']}")
-        print(f"Best validation loss: {summary['best_valid_loss']:.6f}")
+        if summary.get("is_main_process", True):
+            print(f"Wrote Transformer model to {Path(args.out).resolve()}")
+            print(f"Samples: {summary['samples']}")
+            print(f"Optimizer steps: {summary['optimizer_steps']}")
+            print(f"Best validation loss: {summary['best_valid_loss']:.6f}")
+        return 0
+
+    if args.command == "ml-predict":
+        assert config is not None
+        prices = load_price_csv(args.prices, config)
+        asof = resolve_prediction_asof(prices, args.asof)
+        predictor = load_transformer_predictor(args.model, device=args.device)
+        scores = predictor.predict_scores(prices.loc[:asof], config, asof)
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        rows = scores.rename("model_score").reset_index()
+        rows.insert(0, "date", asof.date().isoformat())
+        rows.to_csv(out, index=False)
+        print(f"Wrote Transformer predictions to {out.resolve()}")
+        print(f"As-of date: {asof.date().isoformat()}")
+        print(f"Rows: {len(rows)}")
         return 0
 
     if args.command == "ml-walk-forward":
@@ -360,6 +396,18 @@ def latest_model_scores(model_provider, prices, config):
     if model_provider is None:
         return None
     return model_provider.predict_scores(prices, config, prices.index[-1])
+
+
+def resolve_prediction_asof(prices, asof: str | None) -> pd.Timestamp:
+    if prices.empty:
+        raise ValueError("Price data is empty.")
+    if asof is None:
+        return pd.Timestamp(prices.index[-1])
+    requested = pd.Timestamp(asof)
+    eligible = prices.index[prices.index <= requested]
+    if len(eligible) == 0:
+        raise ValueError(f"No price rows are available on or before {requested.date().isoformat()}.")
+    return pd.Timestamp(eligible[-1])
 
 
 def write_latest_signals(

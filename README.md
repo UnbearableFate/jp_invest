@@ -114,6 +114,58 @@ PYTHONPATH=src .venv/bin/python -m rakuten_quant.cli ml-train \
   --epochs 80
 ```
 
+在Miyabi上用4节点DDP训练同一个模型：
+
+```bash
+qsub -V scripts/miyabi/train_transformer_ddp_4node.pbs
+```
+
+这个PBS脚本默认读取`configs/strategy_extended.toml`和`data/jquants_prices.csv`，如果行情文件不存在且提交环境里有`JQUANTS_API_KEY`，会从`2021-06-04`开始下载J-Quants行情，再构建`data/ml_dataset.csv`并通过`mpirun -> torchrun`启动4节点DDP训练。调试时可以限制优化步数：
+
+```bash
+qsub -V -v MAX_STEPS=10,EPOCHS=80 scripts/miyabi/train_transformer_ddp_4node.pbs
+```
+
+如需每节点启动多个DDP worker，可以提交时覆盖`NPROC_PER_NODE`：
+
+```bash
+qsub -V -v NPROC_PER_NODE=4 scripts/miyabi/train_transformer_ddp_4node.pbs
+```
+
+用训练好的Transformer生成单日预测分数：
+
+```bash
+PYTHONPATH=src .venv/bin/python -m rakuten_quant.cli ml-predict \
+  --config configs/strategy_extended.toml \
+  --prices data/jquants_prices.csv \
+  --model artifacts/ml/transformer.pt \
+  --out reports/ml/latest_transformer_scores.csv
+```
+
+把Transformer预测分数和经典规则分数混合，直接生成买卖推荐：
+
+```bash
+PYTHONPATH=src .venv/bin/python -m rakuten_quant.cli recommend \
+  --use-existing-prices \
+  --config configs/strategy_extended.toml \
+  --prices data/jquants_prices.csv \
+  --out-dir reports/jquants_transformer \
+  --score-csv reports/ml/latest_transformer_scores.csv \
+  --model-weight 0.3
+```
+
+在Miyabi上提交单节点预测和混合推荐：
+
+```bash
+qsub -V scripts/miyabi/predict_transformer_1node.pbs
+```
+
+这个脚本会先写`reports/ml/latest_transformer_scores.csv`，然后立即用`--score-csv`叠加到经典规则策略，输出`reports/jquants_transformer/latest_signals.csv`和`reports/jquants_transformer/orders.csv`。可以用`MODEL_WEIGHT`调整Transformer权重，例如：
+
+```bash
+qsub -V -v MODEL_WEIGHT=0.4,RECOMMEND_OUT_DIR=reports/jquants_transformer_04 scripts/miyabi/predict_transformer_1node.pbs
+```
+
 用walk-forward方式检查模型是否真的提升样本外表现：
 
 ```bash

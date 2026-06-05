@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 from typing import Any
 
@@ -407,6 +408,80 @@ def choose_device(device: str | None = None) -> str:
     return "cpu"
 
 
+@dataclass(frozen=True)
+class DistributedContext:
+    rank: int = 0
+    local_rank: int = 0
+    world_size: int = 1
+    backend: str | None = None
+    initialized: bool = False
+
+    @property
+    def is_distributed(self) -> bool:
+        return self.world_size > 1
+
+    @property
+    def is_main_process(self) -> bool:
+        return self.rank == 0
+
+
+def distributed_context_from_env() -> DistributedContext:
+    if "RANK" not in os.environ or "WORLD_SIZE" not in os.environ:
+        return DistributedContext()
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    return DistributedContext(rank=rank, local_rank=local_rank, world_size=world_size)
+
+
+def choose_training_device(torch_module: Any, requested_device: str | None, context: DistributedContext) -> str:
+    if requested_device:
+        if requested_device == "cuda" and context.is_distributed:
+            return f"cuda:{context.local_rank}"
+        return requested_device
+    if torch_module.cuda.is_available():
+        return f"cuda:{context.local_rank}" if context.is_distributed else "cuda"
+    if getattr(torch_module.backends, "mps", None) and torch_module.backends.mps.is_available() and not context.is_distributed:
+        return "mps"
+    return "cpu"
+
+
+def initialize_distributed_training(torch_module: Any, device_name: str, context: DistributedContext) -> DistributedContext:
+    if not context.is_distributed:
+        return context
+
+    distributed = torch_module.distributed
+    backend = os.environ.get("DIST_BACKEND") or None
+    if backend is None:
+        backend = "nccl" if device_name.startswith("cuda") else "gloo"
+
+    if device_name.startswith("cuda"):
+        torch_module.cuda.set_device(context.local_rank)
+
+    if not distributed.is_initialized():
+        distributed.init_process_group(
+            backend=backend,
+            timeout=timedelta(seconds=int(os.environ.get("DIST_TIMEOUT_SECONDS", "600"))),
+        )
+
+    return DistributedContext(
+        rank=distributed.get_rank(),
+        local_rank=context.local_rank,
+        world_size=distributed.get_world_size(),
+        backend=backend,
+        initialized=True,
+    )
+
+
+def distributed_mean(torch_module: Any, value: float, device_name: str, context: DistributedContext) -> float:
+    if not context.initialized:
+        return value
+    tensor = torch_module.tensor(float(value), dtype=torch_module.float64, device=device_name)
+    torch_module.distributed.all_reduce(tensor, op=torch_module.distributed.ReduceOp.SUM)
+    tensor /= context.world_size
+    return float(tensor.detach().cpu())
+
+
 def train_transformer(
     dataset: pd.DataFrame | str | Path,
     out_path: str | Path,
@@ -422,6 +497,7 @@ def train_transformer(
     validation_ratio: float = 0.2,
     device: str | None = None,
     seed: int = 7,
+    max_steps: int | None = None,
 ) -> dict[str, Any]:
     torch_module = require_torch()
     if isinstance(dataset, (str, Path)):
@@ -441,7 +517,18 @@ def train_transformer(
         raise ValueError("Not enough sequence samples to train the Transformer.")
 
     torch_module.manual_seed(seed)
-    device_name = choose_device(device)
+    context = distributed_context_from_env()
+    device_name = choose_training_device(torch_module, device, context)
+    context = initialize_distributed_training(torch_module, device_name, context)
+    if context.is_distributed:
+        print(
+            "ml-train distributed "
+            f"rank={context.rank} local_rank={context.local_rank} "
+            f"world_size={context.world_size} backend={context.backend} device={device_name} "
+            f"host={os.uname().nodename}",
+            flush=True,
+        )
+
     train_index, valid_index = time_ordered_split(meta, validation_ratio)
     x_train = x[train_index]
     y_train = y[train_index]
@@ -463,42 +550,86 @@ def train_transformer(
         "dropout": dropout,
     }
     model = PriceTransformer(**model_config).to(device_name)
+    train_model = model
+    if context.initialized:
+        ddp_kwargs: dict[str, Any] = {}
+        if device_name.startswith("cuda"):
+            ddp_kwargs["device_ids"] = [context.local_rank]
+            ddp_kwargs["output_device"] = context.local_rank
+        train_model = torch_module.nn.parallel.DistributedDataParallel(model, **ddp_kwargs)
+
     optimizer = torch_module.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     loss_fn = torch_module.nn.SmoothL1Loss()
 
+    train_dataset = torch_module.utils.data.TensorDataset(
+        torch_module.tensor(x_train, dtype=torch_module.float32),
+        torch_module.tensor(y_train, dtype=torch_module.float32),
+    )
+    train_sampler = None
+    if context.initialized:
+        train_sampler = torch_module.utils.data.distributed.DistributedSampler(
+            train_dataset,
+            num_replicas=context.world_size,
+            rank=context.rank,
+            shuffle=True,
+            seed=seed,
+        )
+
     train_loader = torch_module.utils.data.DataLoader(
-        torch_module.utils.data.TensorDataset(
-            torch_module.tensor(x_train, dtype=torch_module.float32),
-            torch_module.tensor(y_train, dtype=torch_module.float32),
-        ),
+        train_dataset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
     )
 
     best_state = None
     best_valid_loss = float("inf")
     final_train_loss = float("nan")
-    for _ in range(max(epochs, 1)):
-        model.train()
+    optimizer_steps = 0
+    for epoch in range(max(epochs, 1)):
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
+        train_model.train()
         batch_losses: list[float] = []
         for batch_x, batch_y in train_loader:
             batch_x = batch_x.to(device_name)
             batch_y = batch_y.to(device_name)
             optimizer.zero_grad(set_to_none=True)
-            loss = loss_fn(model(batch_x), batch_y)
+            loss = loss_fn(train_model(batch_x), batch_y)
             loss.backward()
             optimizer.step()
+            optimizer_steps += 1
             batch_losses.append(float(loss.detach().cpu()))
+            if max_steps is not None and optimizer_steps >= max_steps:
+                break
         final_train_loss = float(np.mean(batch_losses)) if batch_losses else float("nan")
+        final_train_loss = distributed_mean(torch_module, final_train_loss, device_name, context)
 
-        valid_loss = evaluate_loss(model, x_valid, y_valid, loss_fn, device_name)
+        valid_loss = evaluate_loss(train_model, x_valid, y_valid, loss_fn, device_name)
+        valid_loss = distributed_mean(torch_module, valid_loss, device_name, context)
         if valid_loss <= best_valid_loss:
             best_valid_loss = valid_loss
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+        if max_steps is not None and optimizer_steps >= max_steps:
+            break
 
     if best_state is not None:
         model.load_state_dict(best_state)
 
+    train_summary = {
+        "samples": int(len(x)),
+        "train_samples": int(len(train_index)),
+        "valid_samples": int(len(valid_index)),
+        "final_train_loss": final_train_loss,
+        "best_valid_loss": best_valid_loss,
+        "device": device_name,
+        "epochs": int(max(epochs, 1)),
+        "optimizer_steps": int(optimizer_steps),
+        "distributed": bool(context.is_distributed),
+        "world_size": int(context.world_size),
+        "rank": int(context.rank),
+        "is_main_process": bool(context.is_main_process),
+    }
     checkpoint = {
         "model_type": "price_transformer",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -509,20 +640,19 @@ def train_transformer(
         },
         "model_config": model_config,
         "state_dict": model.state_dict(),
-        "train_summary": {
-            "samples": int(len(x)),
-            "train_samples": int(len(train_index)),
-            "valid_samples": int(len(valid_index)),
-            "final_train_loss": final_train_loss,
-            "best_valid_loss": best_valid_loss,
-            "device": device_name,
-            "epochs": int(max(epochs, 1)),
-        },
+        "train_summary": train_summary,
     }
     out = Path(out_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    torch_module.save(checkpoint, out)
-    return checkpoint["train_summary"]
+    if context.is_main_process:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        torch_module.save(checkpoint, out)
+    if context.initialized:
+        if device_name.startswith("cuda"):
+            torch_module.distributed.barrier(device_ids=[context.local_rank])
+        else:
+            torch_module.distributed.barrier()
+        torch_module.distributed.destroy_process_group()
+    return train_summary
 
 
 def time_ordered_split(meta: pd.DataFrame, validation_ratio: float) -> tuple[np.ndarray, np.ndarray]:

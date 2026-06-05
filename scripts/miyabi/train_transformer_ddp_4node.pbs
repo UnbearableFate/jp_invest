@@ -1,0 +1,153 @@
+#!/bin/bash
+#PBS -q regular-g
+#PBS -W group_list=xg24i002
+#PBS -l select=4:mpiprocs=1
+#PBS -l walltime=01:00:00
+#PBS -j oe
+#PBS -m ae
+
+set -eEuo pipefail
+trap 'echo "[ERROR] Failed at line $LINENO" >&2' ERR
+
+PROJECT_ROOT="${PROJECT_ROOT:-${PBS_O_WORKDIR:-/work/xg24i002/x10041/jp_invest}}"
+cd "$PROJECT_ROOT"
+
+PYTHON_BIN="${PYTHON_BIN:-$PROJECT_ROOT/.venv/bin/python}"
+TORCHRUN_BIN="${TORCHRUN_BIN:-$(dirname "$PYTHON_BIN")/torchrun}"
+CONFIG="${CONFIG:-configs/strategy_extended.toml}"
+PRICES="${PRICES:-data/jquants_prices.csv}"
+DATASET="${DATASET:-data/ml_dataset.csv}"
+MODEL_OUT="${MODEL_OUT:-artifacts/ml/transformer.pt}"
+START_DATE="${START_DATE:-2021-06-04}"
+END_DATE="${END_DATE:-$(date +%F)}"
+HORIZON_DAYS="${HORIZON_DAYS:-21}"
+SEQUENCE_LENGTH="${SEQUENCE_LENGTH:-12}"
+EPOCHS="${EPOCHS:-80}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
+LEARNING_RATE="${LEARNING_RATE:-1e-3}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-1e-4}"
+MODEL_DIM="${MODEL_DIM:-64}"
+NUM_HEADS="${NUM_HEADS:-4}"
+NUM_LAYERS="${NUM_LAYERS:-2}"
+DROPOUT="${DROPOUT:-0.1}"
+VALIDATION_RATIO="${VALIDATION_RATIO:-0.2}"
+SEED="${SEED:-7}"
+MAX_STEPS="${MAX_STEPS:-}"
+NPROC_PER_NODE="${NPROC_PER_NODE:-1}"
+MASTER_PORT="${MASTER_PORT:-29500}"
+DIST_BACKEND="${DIST_BACKEND:-nccl}"
+OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "ERROR: PYTHON_BIN is not executable: $PYTHON_BIN" >&2
+  exit 2
+fi
+
+if [[ ! -x "$TORCHRUN_BIN" ]]; then
+  TORCHRUN_BIN="$(command -v torchrun || true)"
+fi
+if [[ ! -x "$TORCHRUN_BIN" ]]; then
+  echo "ERROR: torchrun was not found. Set TORCHRUN_BIN or install torch in .venv." >&2
+  exit 2
+fi
+
+: "${PBS_NODEFILE:?PBS_NODEFILE is not set}"
+mapfile -t HOSTS < <(awk '!seen[$0]++' "$PBS_NODEFILE")
+NNODES="${#HOSTS[@]}"
+WORLD_SIZE=$((NNODES * NPROC_PER_NODE))
+MASTER_ADDR="${MASTER_ADDR:-${HOSTS[0]}}"
+
+timestamp=$(date "+%Y%m%d%H%M%S")
+LOG_ROOT="${LOG_ROOT:-$PROJECT_ROOT/reports/miyabi/transformer_ddp_${timestamp}}"
+mkdir -p "$LOG_ROOT" "$(dirname "$PRICES")" "$(dirname "$DATASET")" "$(dirname "$MODEL_OUT")"
+
+export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export OMP_NUM_THREADS
+
+echo "PROJECT_ROOT=$PROJECT_ROOT"
+echo "PYTHON_BIN=$PYTHON_BIN"
+echo "TORCHRUN_BIN=$TORCHRUN_BIN"
+echo "CONFIG=$CONFIG"
+echo "PRICES=$PRICES"
+echo "DATASET=$DATASET"
+echo "MODEL_OUT=$MODEL_OUT"
+echo "LOG_ROOT=$LOG_ROOT"
+echo "NNODES=$NNODES NPROC_PER_NODE=$NPROC_PER_NODE WORLD_SIZE=$WORLD_SIZE"
+echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT DIST_BACKEND=$DIST_BACKEND"
+echo "HOSTS:"
+printf '  %s\n' "${HOSTS[@]}"
+
+if [[ ! -f "$PRICES" ]]; then
+  if [[ -z "${JQUANTS_API_KEY:-}" ]]; then
+    echo "ERROR: $PRICES does not exist and JQUANTS_API_KEY is not available." >&2
+    echo "Submit with qsub -V after exporting JQUANTS_API_KEY, or set PRICES to an existing CSV." >&2
+    exit 2
+  fi
+  "$PYTHON_BIN" -m rakuten_quant.cli download-jquants \
+    --config "$CONFIG" \
+    --start "$START_DATE" \
+    --end "$END_DATE" \
+    --out "$PRICES" 2>&1 | tee "$LOG_ROOT/download.log"
+fi
+
+"$PYTHON_BIN" -m rakuten_quant.cli ml-build-dataset \
+  --config "$CONFIG" \
+  --prices "$PRICES" \
+  --out "$DATASET" \
+  --horizon-days "$HORIZON_DAYS" 2>&1 | tee "$LOG_ROOT/build_dataset.log"
+
+TRAIN_ARGS=(
+  ml-train
+  --dataset "$DATASET"
+  --out "$MODEL_OUT"
+  --sequence-length "$SEQUENCE_LENGTH"
+  --epochs "$EPOCHS"
+  --batch-size "$BATCH_SIZE"
+  --learning-rate "$LEARNING_RATE"
+  --weight-decay "$WEIGHT_DECAY"
+  --model-dim "$MODEL_DIM"
+  --num-heads "$NUM_HEADS"
+  --num-layers "$NUM_LAYERS"
+  --dropout "$DROPOUT"
+  --validation-ratio "$VALIDATION_RATIO"
+  --seed "$SEED"
+)
+if [[ -n "$MAX_STEPS" ]]; then
+  TRAIN_ARGS+=(--max-steps "$MAX_STEPS")
+fi
+if [[ -n "${DEVICE:-}" ]]; then
+  TRAIN_ARGS+=(--device "$DEVICE")
+fi
+
+MPI_ENV_ARGS=(
+  "PROJECT_ROOT=$PROJECT_ROOT"
+  "PYTHONPATH=$PYTHONPATH"
+  "TORCHRUN_BIN=$TORCHRUN_BIN"
+  "MASTER_ADDR=$MASTER_ADDR"
+  "MASTER_PORT=$MASTER_PORT"
+  "NNODES=$NNODES"
+  "NPROC_PER_NODE=$NPROC_PER_NODE"
+  "DIST_BACKEND=$DIST_BACKEND"
+  "OMP_NUM_THREADS=$OMP_NUM_THREADS"
+)
+
+mpirun \
+  --mca mpi_abort_print_stack 1 \
+  --report-bindings \
+  --bind-to core \
+  -np "$NNODES" \
+  /usr/bin/env "${MPI_ENV_ARGS[@]}" \
+  bash -lc '
+    set -euo pipefail
+    node_rank="${OMPI_COMM_WORLD_RANK:?OMPI_COMM_WORLD_RANK is not set}"
+    echo "torchrun supervisor host=$(hostname) node_rank=${node_rank}/${NNODES:?NNODES is not set}"
+    exec "$TORCHRUN_BIN" \
+      --rdzv-backend=c10d \
+      --rdzv-endpoint="${MASTER_ADDR}:${MASTER_PORT}" \
+      --nnodes="$NNODES" \
+      --nproc-per-node="$NPROC_PER_NODE" \
+      --node-rank="$node_rank" \
+      --module rakuten_quant.cli "$@"
+  ' bash "${TRAIN_ARGS[@]}" 2>&1 | tee "$LOG_ROOT/train.log"
+
+echo "Training complete: $MODEL_OUT"

@@ -1,0 +1,112 @@
+#!/bin/bash
+#PBS -q regular-g
+#PBS -W group_list=xg24i002
+#PBS -l select=1
+#PBS -l walltime=00:30:00
+#PBS -j oe
+#PBS -m ae
+
+set -eEuo pipefail
+trap 'echo "[ERROR] Failed at line $LINENO" >&2' ERR
+
+PROJECT_ROOT="${PROJECT_ROOT:-${PBS_O_WORKDIR:-/work/xg24i002/x10041/jp_invest}}"
+cd "$PROJECT_ROOT"
+
+PYTHON_BIN="${PYTHON_BIN:-$PROJECT_ROOT/.venv/bin/python}"
+CONFIG="${CONFIG:-configs/strategy_extended.toml}"
+PRICES="${PRICES:-data/jquants_prices.csv}"
+MODEL="${MODEL:-artifacts/ml/transformer.pt}"
+OUT="${OUT:-reports/ml/latest_transformer_scores.csv}"
+RECOMMEND_OUT_DIR="${RECOMMEND_OUT_DIR:-reports/jquants_transformer}"
+MODEL_WEIGHT="${MODEL_WEIGHT:-0.3}"
+SCORE_MAX_AGE_DAYS="${SCORE_MAX_AGE_DAYS:-30}"
+POSITIONS="${POSITIONS:-}"
+CURRENT_DRAWDOWN="${CURRENT_DRAWDOWN:-0.0}"
+RUN_RECOMMEND="${RUN_RECOMMEND:-1}"
+START_DATE="${START_DATE:-2021-06-04}"
+END_DATE="${END_DATE:-$(date +%F)}"
+ASOF="${ASOF:-}"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "ERROR: PYTHON_BIN is not executable: $PYTHON_BIN" >&2
+  exit 2
+fi
+
+timestamp=$(date "+%Y%m%d%H%M%S")
+LOG_ROOT="${LOG_ROOT:-$PROJECT_ROOT/reports/miyabi/transformer_predict_${timestamp}}"
+mkdir -p "$LOG_ROOT" "$(dirname "$PRICES")" "$(dirname "$OUT")" "$RECOMMEND_OUT_DIR"
+
+export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+
+echo "PROJECT_ROOT=$PROJECT_ROOT"
+echo "PYTHON_BIN=$PYTHON_BIN"
+echo "CONFIG=$CONFIG"
+echo "PRICES=$PRICES"
+echo "MODEL=$MODEL"
+echo "OUT=$OUT"
+echo "RECOMMEND_OUT_DIR=$RECOMMEND_OUT_DIR"
+echo "MODEL_WEIGHT=$MODEL_WEIGHT"
+echo "SCORE_MAX_AGE_DAYS=$SCORE_MAX_AGE_DAYS"
+echo "POSITIONS=$POSITIONS"
+echo "CURRENT_DRAWDOWN=$CURRENT_DRAWDOWN"
+echo "RUN_RECOMMEND=$RUN_RECOMMEND"
+echo "LOG_ROOT=$LOG_ROOT"
+echo "HOST=$(hostname)"
+
+if [[ ! -f "$PRICES" ]]; then
+  if [[ -z "${JQUANTS_API_KEY:-}" ]]; then
+    echo "ERROR: $PRICES does not exist and JQUANTS_API_KEY is not available." >&2
+    echo "Submit with qsub -V after exporting JQUANTS_API_KEY, or set PRICES to an existing CSV." >&2
+    exit 2
+  fi
+  "$PYTHON_BIN" -m rakuten_quant.cli download-jquants \
+    --config "$CONFIG" \
+    --start "$START_DATE" \
+    --end "$END_DATE" \
+    --out "$PRICES" 2>&1 | tee "$LOG_ROOT/download.log"
+fi
+
+if [[ ! -f "$MODEL" ]]; then
+  echo "ERROR: model checkpoint does not exist: $MODEL" >&2
+  exit 2
+fi
+
+PREDICT_ARGS=(
+  ml-predict
+  --config "$CONFIG"
+  --prices "$PRICES"
+  --model "$MODEL"
+  --out "$OUT"
+)
+if [[ -n "$ASOF" ]]; then
+  PREDICT_ARGS+=(--asof "$ASOF")
+fi
+if [[ -n "${DEVICE:-}" ]]; then
+  PREDICT_ARGS+=(--device "$DEVICE")
+fi
+
+"$PYTHON_BIN" -m rakuten_quant.cli "${PREDICT_ARGS[@]}" 2>&1 | tee "$LOG_ROOT/predict.log"
+
+echo "Prediction complete: $OUT"
+
+if [[ "$RUN_RECOMMEND" != "0" ]]; then
+  RECOMMEND_ARGS=(
+    recommend
+    --use-existing-prices
+    --config "$CONFIG"
+    --prices "$PRICES"
+    --out-dir "$RECOMMEND_OUT_DIR"
+    --score-csv "$OUT"
+    --score-max-age-days "$SCORE_MAX_AGE_DAYS"
+    --model-weight "$MODEL_WEIGHT"
+    --current-drawdown "$CURRENT_DRAWDOWN"
+  )
+  if [[ -n "$POSITIONS" ]]; then
+    RECOMMEND_ARGS+=(--positions "$POSITIONS")
+  fi
+
+  "$PYTHON_BIN" -m rakuten_quant.cli "${RECOMMEND_ARGS[@]}" 2>&1 | tee "$LOG_ROOT/recommend.log"
+
+  echo "Hybrid signals complete: $RECOMMEND_OUT_DIR/latest_signals.csv"
+  echo "Hybrid orders complete: $RECOMMEND_OUT_DIR/orders.csv"
+fi
