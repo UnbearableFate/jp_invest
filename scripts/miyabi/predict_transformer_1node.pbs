@@ -23,7 +23,7 @@ SCORE_MAX_AGE_DAYS="${SCORE_MAX_AGE_DAYS:-30}"
 POSITIONS="${POSITIONS:-}"
 CURRENT_DRAWDOWN="${CURRENT_DRAWDOWN:-0.0}"
 RUN_RECOMMEND="${RUN_RECOMMEND:-1}"
-START_DATE="${START_DATE:-2021-06-04}"
+START_DATE="${START_DATE:-}"
 END_DATE="${END_DATE:-$(date +%F)}"
 ASOF="${ASOF:-}"
 
@@ -38,6 +38,14 @@ mkdir -p "$LOG_ROOT" "$(dirname "$PRICES")" "$(dirname "$OUT")" "$RECOMMEND_OUT_
 
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
+if [[ -z "$START_DATE" ]]; then
+  START_DATE="$("$PYTHON_BIN" - <<'PY'
+from rakuten_quant.data import default_jquants_start
+print(default_jquants_start())
+PY
+)"
+fi
+
 echo "PROJECT_ROOT=$PROJECT_ROOT"
 echo "PYTHON_BIN=$PYTHON_BIN"
 echo "CONFIG=$CONFIG"
@@ -50,6 +58,7 @@ echo "SCORE_MAX_AGE_DAYS=$SCORE_MAX_AGE_DAYS"
 echo "POSITIONS=$POSITIONS"
 echo "CURRENT_DRAWDOWN=$CURRENT_DRAWDOWN"
 echo "RUN_RECOMMEND=$RUN_RECOMMEND"
+echo "START_DATE=$START_DATE END_DATE=$END_DATE"
 echo "LOG_ROOT=$LOG_ROOT"
 echo "HOST=$(hostname)"
 

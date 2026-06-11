@@ -9,7 +9,7 @@ import pandas as pd
 from .basic_strategies import compare_basic_strategies
 from .backtest import run_backtest, write_backtest_outputs
 from .config import load_config
-from .data import fetch_jquants_v2_daily_quotes, fetch_yahoo_chart, load_price_csv
+from .data import default_jquants_start, fetch_jquants_v2_daily_quotes, fetch_yahoo_chart, load_price_csv
 from .hf_peft import CompositeScoreProvider, CsvScoreProvider, DEFAULT_FINANCE_MODEL, score_texts_with_hf_model, write_peft_training_script
 from .ml import build_ml_dataset, load_transformer_predictor, train_transformer, walk_forward_transformer
 from .orders import build_orders, load_positions
@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Download J-Quants data and write the latest recommended order list.",
     )
     recommend.add_argument("--config", default="configs/strategy.toml")
-    recommend.add_argument("--start", default="2021-05-29")
+    recommend.add_argument("--start", default=default_jquants_start())
     recommend.add_argument("--end", default=date.today().isoformat())
     recommend.add_argument("--prices", default="data/jquants_prices.csv")
     recommend.add_argument("--out-dir", default="reports/jquants")

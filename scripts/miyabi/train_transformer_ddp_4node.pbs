@@ -18,7 +18,7 @@ CONFIG="${CONFIG:-configs/strategy_extended.toml}"
 PRICES="${PRICES:-data/jquants_prices.csv}"
 DATASET="${DATASET:-data/ml_dataset.csv}"
 MODEL_OUT="${MODEL_OUT:-artifacts/ml/transformer.pt}"
-START_DATE="${START_DATE:-2021-06-04}"
+START_DATE="${START_DATE:-}"
 END_DATE="${END_DATE:-$(date +%F)}"
 HORIZON_DAYS="${HORIZON_DAYS:-21}"
 SEQUENCE_LENGTH="${SEQUENCE_LENGTH:-12}"
@@ -64,6 +64,14 @@ mkdir -p "$LOG_ROOT" "$(dirname "$PRICES")" "$(dirname "$DATASET")" "$(dirname "
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export OMP_NUM_THREADS
 
+if [[ -z "$START_DATE" ]]; then
+  START_DATE="$("$PYTHON_BIN" - <<'PY'
+from rakuten_quant.data import default_jquants_start
+print(default_jquants_start())
+PY
+)"
+fi
+
 echo "PROJECT_ROOT=$PROJECT_ROOT"
 echo "PYTHON_BIN=$PYTHON_BIN"
 echo "TORCHRUN_BIN=$TORCHRUN_BIN"
@@ -71,6 +79,7 @@ echo "CONFIG=$CONFIG"
 echo "PRICES=$PRICES"
 echo "DATASET=$DATASET"
 echo "MODEL_OUT=$MODEL_OUT"
+echo "START_DATE=$START_DATE END_DATE=$END_DATE"
 echo "LOG_ROOT=$LOG_ROOT"
 echo "NNODES=$NNODES NPROC_PER_NODE=$NPROC_PER_NODE WORLD_SIZE=$WORLD_SIZE"
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT DIST_BACKEND=$DIST_BACKEND"

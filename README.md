@@ -27,11 +27,13 @@ uv pip install -r requirements.txt
 
 这个命令会自动完成：
 
-1. 从J-Quants下载最新可用日线到`data/jquants_prices.csv`
+1. 优先复用`data/jquants_prices.csv`本地缓存，只向J-Quants补下载缺失的新日期或新标的
 2. 运行回测并写入`reports/jquants/backtest_report.md`
 3. 生成最新信号到`reports/jquants/latest_signals.csv`
 4. 生成推荐下单清单到`reports/jquants/orders.csv`
 5. 在终端打印需要执行的`BUY`/`SELL`
+
+J-Quants API请求会自动把开始日期裁到运行当天往前5年。例如在2026-06-05运行时，即使传入`--start 2020-01-01`，实际API请求也会从`2021-06-05`开始；如果本地CSV里已有更早历史，系统会继续保留并用于回测。
 
 ## 如果你已有持仓
 
@@ -63,7 +65,7 @@ symbol,units
 指定数据区间：
 
 ```bash
-./scripts/recommend.sh --start 2021-05-29 --end 2026-05-29
+./scripts/recommend.sh --start 2020-01-01 --end 2026-06-05
 ```
 
 指定持仓文件：
@@ -120,7 +122,7 @@ PYTHONPATH=src .venv/bin/python -m rakuten_quant.cli ml-train \
 qsub -V scripts/miyabi/train_transformer_ddp_4node.pbs
 ```
 
-这个PBS脚本默认读取`configs/strategy_extended.toml`和`data/jquants_prices.csv`，如果行情文件不存在且提交环境里有`JQUANTS_API_KEY`，会从`2021-06-04`开始下载J-Quants行情，再构建`data/ml_dataset.csv`并通过`mpirun -> torchrun`启动4节点DDP训练。调试时可以限制优化步数：
+这个PBS脚本默认读取`configs/strategy_extended.toml`和`data/jquants_prices.csv`，如果行情文件不存在且提交环境里有`JQUANTS_API_KEY`，会按运行日动态计算五年前日期作为API起点，再构建`data/ml_dataset.csv`并通过`mpirun -> torchrun`启动4节点DDP训练。调试时可以限制优化步数：
 
 ```bash
 qsub -V -v MAX_STEPS=10,EPOCHS=80 scripts/miyabi/train_transformer_ddp_4node.pbs
