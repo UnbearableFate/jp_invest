@@ -62,17 +62,18 @@ echo "START_DATE=$START_DATE END_DATE=$END_DATE"
 echo "LOG_ROOT=$LOG_ROOT"
 echo "HOST=$(hostname)"
 
-if [[ ! -f "$PRICES" ]]; then
-  if [[ -z "${JQUANTS_API_KEY:-}" ]]; then
-    echo "ERROR: $PRICES does not exist and JQUANTS_API_KEY is not available." >&2
-    echo "Submit with qsub -V after exporting JQUANTS_API_KEY, or set PRICES to an existing CSV." >&2
-    exit 2
-  fi
+if [[ -n "${JQUANTS_API_KEY:-}" ]]; then
   "$PYTHON_BIN" -m rakuten_quant.cli download-jquants \
     --config "$CONFIG" \
     --start "$START_DATE" \
     --end "$END_DATE" \
     --out "$PRICES" 2>&1 | tee "$LOG_ROOT/download.log"
+elif [[ ! -f "$PRICES" ]]; then
+  echo "ERROR: $PRICES does not exist and JQUANTS_API_KEY is not available." >&2
+  echo "Submit with qsub -V after exporting JQUANTS_API_KEY, or set PRICES to an existing CSV." >&2
+  exit 2
+else
+  echo "Reusing existing prices without JQUANTS_API_KEY: $PRICES" | tee "$LOG_ROOT/download.log"
 fi
 
 if [[ ! -f "$MODEL" ]]; then

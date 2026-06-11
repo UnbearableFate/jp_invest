@@ -122,7 +122,7 @@ PYTHONPATH=src .venv/bin/python -m rakuten_quant.cli ml-train \
 qsub -V scripts/miyabi/train_transformer_ddp_4node.pbs
 ```
 
-这个PBS脚本默认读取`configs/strategy_extended.toml`和`data/jquants_prices.csv`，如果行情文件不存在且提交环境里有`JQUANTS_API_KEY`，会按运行日动态计算五年前日期作为API起点，再构建`data/ml_dataset.csv`并通过`mpirun -> torchrun`启动4节点DDP训练。调试时可以限制优化步数：
+这个PBS脚本默认读取`configs/strategy_extended.toml`和`data/jquants_prices.csv`。如果提交环境里有`JQUANTS_API_KEY`，会优先复用本地CSV并只补下载缺失日期或标的，API起点按运行日动态裁到五年前；如果没有API key但CSV已存在，则直接复用本地CSV。随后脚本会构建`data/ml_dataset.csv`并通过`mpirun -> torchrun`启动4节点DDP训练。调试时可以限制优化步数：
 
 ```bash
 qsub -V -v MAX_STEPS=10,EPOCHS=80 scripts/miyabi/train_transformer_ddp_4node.pbs
@@ -162,7 +162,7 @@ PYTHONPATH=src .venv/bin/python -m rakuten_quant.cli recommend \
 qsub -V scripts/miyabi/predict_transformer_1node.pbs
 ```
 
-这个脚本会先写`reports/ml/latest_transformer_scores.csv`，然后立即用`--score-csv`叠加到经典规则策略，输出`reports/jquants_transformer/latest_signals.csv`和`reports/jquants_transformer/orders.csv`。可以用`MODEL_WEIGHT`调整Transformer权重，例如：
+这个脚本会先按同样的cache-first规则刷新或复用`data/jquants_prices.csv`，再写`reports/ml/latest_transformer_scores.csv`，然后立即用`--score-csv`叠加到经典规则策略，输出`reports/jquants_transformer/latest_signals.csv`和`reports/jquants_transformer/orders.csv`。可以用`MODEL_WEIGHT`调整Transformer权重，例如：
 
 ```bash
 qsub -V -v MODEL_WEIGHT=0.4,RECOMMEND_OUT_DIR=reports/jquants_transformer_04 scripts/miyabi/predict_transformer_1node.pbs

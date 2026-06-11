@@ -139,10 +139,6 @@ def fetch_jquants_v2_daily_quotes(
     API requests are clipped to J-Quants' rolling five-year access window.
     """
 
-    api_key = api_key or os.environ.get("JQUANTS_API_KEY")
-    if not api_key:
-        raise ValueError("Set JQUANTS_API_KEY before downloading J-Quants data.")
-
     requested_start = pd.Timestamp(start).normalize()
     requested_end = pd.Timestamp(end).normalize()
     if requested_end < requested_start:
@@ -151,18 +147,27 @@ def fetch_jquants_v2_daily_quotes(
     api_start = clamp_jquants_start(requested_start, today=today)
     out = Path(out_path)
     cached = load_cached_price_rows(out, config)
-    rows: list[dict[str, object]] = []
+    download_jobs: list[tuple[str, str, pd.Timestamp]] = []
 
     for asset in config.enabled_assets:
         if asset.role == "cash":
             continue
         fetch_start = next_fetch_start(cached, asset.symbol, api_start, requested_end)
-        if fetch_start is None:
-            continue
+        if fetch_start is not None:
+            download_jobs.append((asset.symbol, asset.jquants_code or asset.symbol, fetch_start))
+
+    api_key = api_key or os.environ.get("JQUANTS_API_KEY")
+    if download_jobs and not api_key:
+        raise ValueError("Set JQUANTS_API_KEY before downloading missing J-Quants data.")
+
+    rows: list[dict[str, object]] = []
+
+    for asset_symbol, jquants_code, fetch_start in download_jobs:
+        assert api_key is not None
         rows.extend(
             download_jquants_symbol_rows(
-                asset_symbol=asset.symbol,
-                jquants_code=asset.jquants_code or asset.symbol,
+                asset_symbol=asset_symbol,
+                jquants_code=jquants_code,
                 start=fetch_start,
                 end=requested_end,
                 api_key=api_key,

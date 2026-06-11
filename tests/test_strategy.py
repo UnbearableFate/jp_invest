@@ -81,6 +81,28 @@ class StrategyTest(unittest.TestCase):
             saved = pd.read_csv(path)
             self.assertEqual(set(saved["symbol"].astype(str)), {"1329", "1655", "1540", "2510", "2559", "9999"})
 
+    def test_jquants_download_reuses_complete_cache_without_api_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cached_prices.csv"
+            rows = []
+            for symbol in ["1329", "1655", "2559", "1540", "2510"]:
+                rows.append({"date": "2026-06-05", "symbol": symbol, "close": 100.0})
+            pd.DataFrame(rows).to_csv(path, index=False)
+
+            with patch("rakuten_quant.data.download_jquants_symbol_rows") as download:
+                fetch_jquants_v2_daily_quotes(
+                    self.config,
+                    "2021-06-05",
+                    "2026-06-05",
+                    path,
+                    api_key=None,
+                    today=date(2026, 6, 5),
+                )
+
+            download.assert_not_called()
+            saved = pd.read_csv(path)
+            self.assertEqual(len(saved), len(rows))
+
     def test_target_weights_sum_to_one(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "prices.csv"
