@@ -9,10 +9,20 @@
 set -eEuo pipefail
 trap 'echo "[ERROR] Failed at line $LINENO" >&2' ERR
 
-PROJECT_ROOT="${PROJECT_ROOT:-${PBS_O_WORKDIR:-/work/xg24i002/x10041/jp_invest}}"
+DEFAULT_PROJECT_ROOT="/work/xg24i002/x10041/jp_invest"
+PROJECT_ROOT="${PROJECT_ROOT:-${PBS_O_WORKDIR:-$DEFAULT_PROJECT_ROOT}}"
+if [[ ! -f "$PROJECT_ROOT/pyproject.toml" && -f "$DEFAULT_PROJECT_ROOT/pyproject.toml" ]]; then
+  echo "PROJECT_ROOT=$PROJECT_ROOT does not look like this checkout; falling back to $DEFAULT_PROJECT_ROOT"
+  PROJECT_ROOT="$DEFAULT_PROJECT_ROOT"
+fi
 cd "$PROJECT_ROOT"
 
-PYTHON_BIN="${PYTHON_BIN:-$PROJECT_ROOT/.venv/bin/python}"
+DEFAULT_PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
+PYTHON_BIN="${PYTHON_BIN:-$DEFAULT_PYTHON_BIN}"
+if [[ ! -x "$PYTHON_BIN" && -x "$DEFAULT_PYTHON_BIN" ]]; then
+  echo "PYTHON_BIN=$PYTHON_BIN is not executable; falling back to $DEFAULT_PYTHON_BIN"
+  PYTHON_BIN="$DEFAULT_PYTHON_BIN"
+fi
 CONFIG="${CONFIG:-configs/strategy_extended.toml}"
 PRICES="${PRICES:-data/jquants_prices.csv}"
 MODEL="${MODEL:-artifacts/ml/transformer.pt}"
